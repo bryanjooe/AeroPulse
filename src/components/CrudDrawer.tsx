@@ -1,0 +1,46 @@
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { ArrowRight, Trash2, X } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import type { AirportDatabase } from '../types';
+import { deleteRecord, saveRecord, type CrudTable } from '../api/mock';
+import { ConfirmDialog } from './shared';
+
+type Field={name:string;label:string;type?:'text'|'email'|'date'|'number'|'select'|'checkbox';required?:boolean;placeholder?:string;options?:{value:string|number;label:string}[];help?:string};
+const fieldMap:Record<CrudTable,(db:AirportDatabase)=>Field[]>={
+  airports:()=>[{name:'iata_code',label:'IATA code',required:true,placeholder:'JFK'},{name:'icao_code',label:'ICAO code',placeholder:'KJFK',help:'Optional four-letter identifier.'},{name:'name',label:'Airport name',required:true},{name:'city',label:'City',required:true},{name:'country',label:'Country',required:true},{name:'timezone',label:'IANA timezone',required:true,placeholder:'America/New_York'}],
+  airlines:()=>[{name:'iata_code',label:'IATA code',required:true,placeholder:'AA'},{name:'name',label:'Airline name',required:true},{name:'country',label:'Country',required:true},{name:'active',label:'Active carrier',type:'checkbox'}],
+  aircraft:db=>[{name:'airline_id',label:'Airline',type:'select',required:true,options:db.airlines.map(a=>({value:a.airline_id,label:`${a.name} (${a.iata_code})`}))},{name:'registration',label:'Registration',required:true},{name:'model',label:'Model',required:true},{name:'manufacturer',label:'Manufacturer',required:true},{name:'in_service',label:'In service',type:'checkbox'}],
+  passengers:()=>[{name:'first_name',label:'First name',required:true},{name:'last_name',label:'Last name',required:true},{name:'email',label:'Email',type:'email',required:true},{name:'date_of_birth',label:'Date of birth',type:'date',required:true},{name:'passport_number',label:'Passport number'},{name:'passport_country',label:'Passport country'}],
+  crew_members:db=>[{name:'airline_id',label:'Airline',type:'select',required:true,options:db.airlines.map(a=>({value:a.airline_id,label:`${a.name} (${a.iata_code})`}))},{name:'employee_number',label:'Employee number',required:true},{name:'full_name',label:'Full name',required:true},{name:'job_title',label:'Role',type:'select',required:true,options:['Captain','First Officer','Flight Attendant','Purser','Engineer'].map(x=>({value:x,label:x}))},{name:'active',label:'Active crew member',type:'checkbox'}],
+  gates:db=>[{name:'airport_id',label:'Airport',type:'select',required:true,options:db.airports.map(a=>({value:a.airport_id,label:`${a.name} (${a.iata_code})`}))},{name:'terminal_id',label:'Terminal',type:'select',required:true,options:db.terminals.map(t=>({value:t.terminal_id,label:`${db.airports.find(a=>a.airport_id===t.airport_id)?.iata_code} · ${t.terminal_code}`}))},{name:'gate_code',label:'Gate code',required:true,placeholder:'A12'}],
+  users_staff:()=>[{name:'full_name',label:'Full name',required:true},{name:'email',label:'Work email',type:'email',required:true},{name:'role',label:'Role',type:'select',required:true,options:[['admin','Administrator'],['agent','Booking agent'],['operations','Ground operations'],['finance','Finance']].map(([value,label])=>({value,label}))},{name:'active',label:'Account enabled',type:'checkbox'}]
+};
+const schemaMap:Record<CrudTable,z.ZodTypeAny>={
+  airports:z.object({iata_code:z.string().regex(/^[A-Z]{3}$/,'Use three uppercase letters.'),icao_code:z.string().nullable().optional(),name:z.string().min(2),city:z.string().min(2),country:z.string().min(2),timezone:z.string().min(3)}),
+  airlines:z.object({iata_code:z.string().regex(/^[A-Z0-9]{2}$/,'Use two uppercase letters or digits.'),name:z.string().min(2),country:z.string().min(2),active:z.boolean().optional()}),
+  aircraft:z.object({airline_id:z.number().positive(),registration:z.string().min(3),model:z.string().min(2),manufacturer:z.string().min(2),in_service:z.boolean().optional()}),
+  passengers:z.object({first_name:z.string().min(2),last_name:z.string().min(2),email:z.email(),date_of_birth:z.string().refine(v=>new Date(v)<new Date(),'Date of birth must be in the past.'),passport_number:z.string().nullable().optional(),passport_country:z.string().nullable().optional()}),
+  crew_members:z.object({airline_id:z.number().positive(),employee_number:z.string().min(3),full_name:z.string().min(2),job_title:z.enum(['Captain','First Officer','Flight Attendant','Purser','Engineer']),active:z.boolean().optional()}),
+  gates:z.object({airport_id:z.number().positive(),terminal_id:z.number().positive(),gate_code:z.string().min(1)}),
+  users_staff:z.object({full_name:z.string().min(2),email:z.email(),role:z.enum(['admin','agent','operations','finance']),active:z.boolean().optional()})
+};
+const titleMap:Record<CrudTable,string>={airports:'airport',airlines:'airline',aircraft:'aircraft',passengers:'passenger',crew_members:'crew member',gates:'gate',users_staff:'staff user'};
+const idField:Record<CrudTable,string>={airports:'airport_id',airlines:'airline_id',aircraft:'aircraft_id',passengers:'passenger_id',crew_members:'crew_member_id',gates:'gate_id',users_staff:'staff_id'};
+
+export function CrudDrawer({table,db,onClose,onToast,record}:{table:CrudTable;db:AirportDatabase;onClose:()=>void;onToast:(message:string)=>void;record?:Record<string,unknown>}){
+  const fields=fieldMap[table](db);const client=useQueryClient();const [confirmDelete,setConfirmDelete]=useState(false);
+  const defaults:Record<string,unknown>={};for(const field of fields)defaults[field.name]=record?.[field.name]??(field.type==='checkbox'?false:field.type==='select'?field.options?.[0]?.value??'':'');
+  const form=useForm<Record<string,unknown>>({defaultValues:defaults});
+  const save=form.handleSubmit(async values=>{
+    const normalized={...values};for(const field of fields){if(field.type==='number'||field.type==='select'){normalized[field.name]=Number(normalized[field.name]);}if(normalized[field.name]===''&&(field.name==='icao_code'||field.name==='passport_number'||field.name==='passport_country'))normalized[field.name]=null;}
+    const result=schemaMap[table].safeParse(normalized);
+    if(!result.success){result.error.issues.forEach(issue=>{const key=String(issue.path[0]??'');form.setError(key as never,{type:'zod',message:issue.message});});return;}
+    try{await saveRecord(table,result.data as Record<string,unknown>,record?Number(record[idField[table]]):undefined);await client.invalidateQueries({queryKey:['airport-db']});onToast(`${titleMap[table]} ${record?'updated':'created'}.`);onClose();}
+    catch(error){onToast(error instanceof Error?error.message:`Could not save ${titleMap[table]}.`);}
+  });
+  const recordId=record?Number(record[idField[table]]):undefined;
+  const remove=async()=>{if(recordId===undefined)return;try{await deleteRecord(table,recordId);await client.invalidateQueries({queryKey:['airport-db']});onToast(`${titleMap[table]} deleted.`);onClose();}catch(error){onToast(error instanceof Error?error.message:'Delete failed.');}finally{setConfirmDelete(false)}};
+  return <div className="drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><aside className="form-drawer" aria-label={`${record?'Edit':'Create'} ${titleMap[table]}`}><div className="drawer-head"><div><div className="eyebrow">DIRECTORY MANAGEMENT</div><h2>{record?'Edit':'Add'} {titleMap[table]}</h2><p>Changes are saved to this browser’s demo workspace.</p></div><button className="icon-button" onClick={onClose} aria-label="Close form"><X size={17}/></button></div><form onSubmit={save} className="drawer-form">{fields.map(field=><label key={field.name} className={field.type==='checkbox'?'drawer-checkbox':''}><span>{field.type==='checkbox'?<>{field.label}<input type="checkbox" {...form.register(field.name)}/></>:field.label.toUpperCase()}</span>{field.type==='select'?<select {...form.register(field.name,{valueAsNumber:typeof field.options?.[0]?.value==='number'})}>{field.options?.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>:field.type==='checkbox'?null:<input type={field.type??'text'} placeholder={field.placeholder} {...form.register(field.name,{valueAsNumber:field.type==='number'})}/>}{field.help&&<small className="form-helper">{field.help}</small>}{form.formState.errors[field.name]?.message&&<small className="form-error">{String(form.formState.errors[field.name]?.message)}</small>}</label>)}<div className="drawer-foot">{record&&<button type="button" className="button button-danger" onClick={()=>setConfirmDelete(true)}><Trash2 size={14}/> Delete</button>}<span className="drawer-spacer"/><button type="button" className="button button-light" onClick={onClose}>Cancel</button><button type="submit" className="button button-primary" disabled={form.formState.isSubmitting}>Save {titleMap[table]} <ArrowRight size={15}/></button></div></form></aside>{confirmDelete&&<ConfirmDialog title={`Delete ${titleMap[table]}?`} description="This action removes the record if it has no dependent operational records." confirmLabel="Delete record" onCancel={()=>setConfirmDelete(false)} onConfirm={()=>void remove()}/>}</div>;
+}
