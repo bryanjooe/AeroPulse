@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { AirportDatabase } from '../types';
-import { createBooking } from '../api/mock';
+import { createBooking } from '../api/client';
 import { StatusBadge } from '../components/ui';
 
 const travelerSchema = z.object({ first_name: z.string().min(2,'Enter the passenger’s first name.'), last_name: z.string().min(2,'Enter the passenger’s last name.'), email: z.email('Enter a valid email address.') });

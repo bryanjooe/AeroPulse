@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ArrowRight, Trash2, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AirportDatabase } from '../types';
-import { deleteRecord, saveRecord, type CrudTable } from '../api/mock';
+import { deleteRecord, saveRecord, type CrudTable } from '../api/client';
 import { ConfirmDialog } from './shared';
 
 type Field={name:string;label:string;type?:'text'|'email'|'date'|'number'|'select'|'checkbox';required?:boolean;placeholder?:string;options?:{value:string|number;label:string}[];help?:string};

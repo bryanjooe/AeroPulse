@@ -5,16 +5,25 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server:dev": "tsx watch server/app.ts",
+    "server:start": "tsx server/app.ts",
+    "auth:hash": "tsx server/hash-password.ts",
+    "db:migrate": "tsx server/migrate.ts",
     "build": "tsc -b && vite build",
+    "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
-    "test:api": "node --experimental-strip-types --test tests/mock.test.ts"
+    "test:api": "node --experimental-strip-types --test tests/mock.test.ts",
+    "test:server": "node --import tsx --test tests/server.integration.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/react-query": "^5.90.5",
     "@tanstack/react-table": "^8.21.3",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
     "framer-motion": "^12.23.24",
     "lucide-react": "^0.468.0",
+    "pg": "^8.23.1",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -24,12 +33,16 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
     "@types/react": "^18.3.26",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.22",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "vite": "^6.4.1"
   }

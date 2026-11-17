@@ -4,22 +4,28 @@ Normalized relational schema and sample business logic for airports, airlines, a
 
 ## Web frontend
 
-The responsive React + Vite application lives in `src/`. It uses the local mock API by default and mirrors the SQL objects with strict TypeScript interfaces. To run the frontend:
+The responsive React + Vite application lives in `src/`; the Express API in `server/` reads and writes PostgreSQL through `pg`. The browser never connects to PostgreSQL directly. The frontend uses same-origin `/api` requests through the Vite proxy and does not fall back to mock data on API errors.
+
+For local development, configure `.env` (keep it untracked) with the existing `DATABASE_URL`, `PORT=3001`, `NODE_ENV=development`, a random `SESSION_SECRET` (at least 32 characters), an `AUTH_EMAIL`, and an `AUTH_PASSWORD_HASH`. `AUTH_EMAIL` is the server-side bootstrap administrator identity; the signed session grants the admin role and cannot be changed from the browser. Generate a password hash with `npm run auth:hash` and copy its output into `.env` without storing the password in a source file or documentation.
+
+Start the API and frontend in separate terminals:
 
 ```sh
 npm install
+npm run server:dev
 npm run dev
 ```
 
 Then open the URL printed by Vite. Use the left navigation to explore the operations dashboard and entity pages, or open **New booking** for the multi-step booking flow. The demo role can be cycled from the staff profile at the top right. `Ctrl+K` searches pages and records.
 
-The browser demo uses `localStorage` so edits, bookings, cancellations, role selection, and theme preference survive refreshes in the same browser. It is a mock data service; PostgreSQL is not called by the frontend. Run `npm run test:api` for automated booking, seat exclusivity, refund, flight status, and crew assignment checks.
+Sign in with the configured admin email and password. The demo role selector only previews navigation; server requests still require the verified admin session. Theme preference is stored in browser `localStorage`; operational records are stored in PostgreSQL. Run `npm run test:api` for mock-layer unit checks and `npm run test:server` for integration checks against a configured PostgreSQL database.
 
 ### Frontend folder structure
 
 ```text
 src/
 ├── api/mock.ts              -- Local API and realistic schema-shaped data
+├── api/client.ts            -- Authenticated HTTP adapter for the backend
 ├── components/ui.tsx        -- Data table, badges, cards, headers, toast
 ├── components/CrudDrawer.tsx -- Validated create/edit/delete forms
 ├── components/shared.tsx    -- Shared confirmation and empty-state UI
@@ -34,13 +40,11 @@ src/
 └── styles.css               -- Responsive light/dark aviation visual system
 ```
 
+The developer-only database page is at `/dev/database`. It discovers public tables and views from PostgreSQL metadata, uses server-side paging/search/sort, masks passport numbers, and does not accept SQL input.
+
 ### Screenshots
 
 Suggested screenshots for a product walkthrough: `dashboard.png`, `flight-operations.png`, `booking-seat-map.png`, `boarding-pass.png`, `airport-network.png`, and `fleet-management.png`. Capture them from the running Vite app at desktop and mobile widths.
-
-### Connecting a PostgreSQL-backed API
-
-The browser must call a REST service rather than connect directly to PostgreSQL. Keep the existing SQL schema as the source of truth, expose endpoints from a Node/Express service using `pg`, and replace `src/api/mock.ts` with an adapter that returns the same response shapes. Suggested resource endpoints are `GET /api/airports`, `/airlines`, `/aircraft`, `/flights`, `/passengers`, `/bookings`, `/tickets`, `/payments`, `/baggage`, `/crew-members`, `/flight-crew`, `/staff-users`, and `/audit-log`. Create and cancel bookings through transactional API endpoints that call the database booking functions. Map the UI's `staff_users` label to the SQL table `users_staff`, and convert snake_case JSON without renaming fields so the TypeScript contracts remain aligned.
 
 ## Requirements
 
@@ -50,17 +54,19 @@ The browser must call a REST service rather than connect directly to PostgreSQL.
 
 ## Setup
 
-Create a dedicated database, then run the scripts in this order:
+Use only a dedicated, disposable local development database. `schema.sql` contains DROP statements, so first confirm the target is empty and has no data to preserve. Never run it on a database with user data. The current local `airport_management` database was checked empty before initialization, then loaded with the schema and development seed data.
+
+For a new local database, create it and apply the schema and optional demo seed explicitly:
 
 ```powershell
 createdb airport_management
 psql -d airport_management -v ON_ERROR_STOP=1 -f schema.sql
 psql -d airport_management -v ON_ERROR_STOP=1 -f seed_data.sql
-psql -d airport_management -v ON_ERROR_STOP=1 -f transaction_examples.sql
-psql -d airport_management -v ON_ERROR_STOP=1 -f queries.sql
 ```
 
-With a connection URL, replace `-d airport_management` with `"$DATABASE_URL"` (or the appropriate shell syntax). `schema.sql` drops and recreates this project's named tables and enum types; use a dedicated database. The seed script inserts sample records and is intended to run once after the schema. The transaction examples create a sample booking and then demonstrate cancellation, so running them changes sample booking state.
+Set the same `DATABASE_URL` in `.env`. Then run `npm run db:migrate` for versioned, non-destructive application migrations. The migration runner is explicit and is never called automatically at server startup. `seed_data.sql` is optional and should only be used for a fresh local demo database. `transaction_examples.sql` intentionally changes booking state and is for manual SQL demonstrations only.
+
+The database browser is read-only and runs its data queries in PostgreSQL read-only transactions with a short timeout. For deployment, use a dedicated database account with only the permissions the app needs; run the developer browser only for trusted administrator sessions. The current auth implementation provides a single environment-configured admin login with an HttpOnly, SameSite=Strict, signed, expiring cookie and same-origin checks. It is a local bootstrap boundary; production deployments should add account lifecycle and a managed session store/rotation policy.
 
 ## Folder structure
 
@@ -70,6 +76,10 @@ With a connection URL, replace `-d airport_management` with `"$DATABASE_URL"` (o
 ├── seed_data.sql              -- Airports, airlines, aircraft, flights, people, 30 bookings, etc.
 ├── transaction_examples.sql   -- Atomic booking and cancellation examples
 ├── queries.sql                -- 17 example reporting queries
+├── server/                    -- Express API, auth, DB access, migrations
+├── src/                       -- React frontend and authenticated API adapter
+├── tests/                     -- Mock and PostgreSQL integration tests
+├── .env.example               -- Configuration names and safe placeholders
 └── README.md                  -- Setup and design notes
 ```
 

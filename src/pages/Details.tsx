@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Luggage, Plane, Ticket, Users } from 'lucide-react';
 import type { AirportDatabase, FlightStatus } from '../types';
-import { assignCrew, cancelBooking, changeFlightStatus } from '../api/mock';
+import { assignCrew, cancelBooking, changeFlightStatus } from '../api/client';
 import { PageHeader, StatusBadge } from '../components/ui';
 
 export function FlightDetail({db,onToast}:{db:AirportDatabase;onToast:(s:string)=>void}) {

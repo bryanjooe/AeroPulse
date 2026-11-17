@@ -8,7 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowDownToLine, ArrowRight, Plane, Plus, Search, SlidersHorizontal, Users, MapPin, Clock3, Ticket, ChevronRight, MoreHorizontal, Luggage, CreditCard, ShieldCheck, PlaneTakeoff } from 'lucide-react';
 import type { AirportDatabase, Flight, Booking, Passenger, UserStaff } from '../types';
 import { DataTable, PageHeader, StatusBadge } from '../components/ui';
-import { createFlight, updateBaggage, type CrudTable } from '../api/mock';
+import { createFlight, updateBaggage, type CrudTable } from '../api/client';
 import { CrudDrawer } from '../components/CrudDrawer';
 
 export type Section = 'flights'|'bookings'|'passengers'|'airports'|'fleet'|'crew'|'baggage'|'payments'|'staff'|'audit';

@@ -2,21 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Activity, Bell, CalendarDays, ChevronDown, ChevronsLeft, Command, LayoutDashboard, Luggage, Menu, Moon, Plane, Search, Settings, ShieldCheck, Sun, Ticket, UserRound, Users, Wallet, X, ArrowRight, Globe2, PlaneTakeoff } from 'lucide-react';
-import { getDatabase } from './api/mock';
+import { Activity, Bell, CalendarDays, ChevronDown, ChevronsLeft, Command, Database, LayoutDashboard, Luggage, Menu, Moon, Plane, Search, Settings, ShieldCheck, Sun, Ticket, UserRound, Users, Wallet, X, ArrowRight, Globe2, PlaneTakeoff } from 'lucide-react';
+import { getDatabase, getSession } from './api/client';
 import { Dashboard } from './pages/Dashboard';
 import { BookingWizard } from './pages/BookingWizard';
 import { EntityPage } from './pages/Entities';
 import { IconButton, Toast } from './components/ui';
 import { BookingDetail, FlightDetail, PassengerDetail } from './pages/Details';
 import type { AirportDatabase } from './types';
+import { LoginPage as ServerLoginPage } from './pages/LoginPage';
+import { DeveloperDatabase } from './pages/DeveloperDatabase';
 
 const navGroups = [
   { label:'WORKSPACE', items:[{path:'/',label:'Overview',icon:LayoutDashboard},{path:'/flights',label:'Flights',icon:Plane},{path:'/booking',label:'New booking',icon:Ticket},{path:'/bookings',label:'Bookings',icon:CalendarDays}] },
   { label:'DIRECTORY', items:[{path:'/passengers',label:'Passengers',icon:Users},{path:'/airports',label:'Airports',icon:Globe2},{path:'/fleet',label:'Airlines & fleet',icon:PlaneTakeoff},{path:'/crew',label:'Crew',icon:UserRound},{path:'/baggage',label:'Baggage',icon:Luggage}] },
-  { label:'FINANCE & ADMIN', items:[{path:'/payments',label:'Payments',icon:Wallet},{path:'/staff',label:'Staff & roles',icon:ShieldCheck},{path:'/audit',label:'Audit log',icon:Activity}] }
+  { label:'FINANCE & ADMIN', items:[{path:'/payments',label:'Payments',icon:Wallet},{path:'/staff',label:'Staff & roles',icon:ShieldCheck},{path:'/audit',label:'Audit log',icon:Activity}] },
+  { label:'DEVELOPER', items:[{path:'/dev/database',label:'Database browser',icon:Database}] }
 ];
-const titles:Record<string,string>={'/':'Overview','/flights':'Flights','/booking':'New booking','/bookings':'Bookings','/passengers':'Passengers','/airports':'Airport network','/fleet':'Airlines & fleet','/crew':'Crew management','/baggage':'Baggage tracking','/payments':'Payments & revenue','/staff':'Staff & roles','/audit':'Audit log'};
+const titles:Record<string,string>={'/':'Overview','/flights':'Flights','/booking':'New booking','/bookings':'Bookings','/passengers':'Passengers','/airports':'Airport network','/fleet':'Airlines & fleet','/crew':'Crew management','/baggage':'Baggage tracking','/payments':'Payments & revenue','/staff':'Staff & roles','/audit':'Audit log','/dev/database':'Database browser'};
 const readPreference=(key:string)=>{try{return localStorage.getItem(key)}catch{return null}};
 const savePreference=(key:string,value:string)=>{try{localStorage.setItem(key,value)}catch{/* Storage may be disabled by the browser. */}};
 
@@ -25,7 +28,8 @@ export function App() {
   const [searchOpen,setSearchOpen]=useState(false); const [query,setQuery]=useState(''); const [noticeOpen,setNoticeOpen]=useState(false);
   const [toastMessage,setToastMessage]=useState(''); const [role,setRole]=useState<'admin'|'operations'|'agent'|'finance'>(()=>{const saved=readPreference('aeropulse.role');return saved==='operations'||saved==='agent'||saved==='finance'?saved:'admin'});
   const queryClient=useQueryClient(); const location=useLocation(); const navigate=useNavigate();
-  const dbQuery=useQuery({queryKey:['airport-db'],queryFn:getDatabase,staleTime:30_000});
+  const sessionQuery=useQuery({queryKey:['auth-session'],queryFn:getSession,retry:false,staleTime:30_000});
+  const dbQuery=useQuery({queryKey:['airport-db'],queryFn:getDatabase,staleTime:10_000,enabled:sessionQuery.data?.authenticated===true});
   const db=dbQuery.data as AirportDatabase|undefined;
   const sections=useMemo(()=>navGroups.flatMap(g=>g.items),[]);
   const filtered=sections.filter(x=>x.label.toLowerCase().includes(query.toLowerCase()));
@@ -45,7 +49,7 @@ export function App() {
   const roleAllowed=(path:string)=>role==='admin'||(role==='operations'?!['/payments','/staff'].includes(path):role==='agent'?['/','/flights','/booking','/bookings','/passengers','/airports','/baggage'].includes(path):['/','/bookings','/payments','/audit'].includes(path));
   useEffect(()=>{const base=location.pathname.split('/').filter(Boolean)[0];const path=base?`/${base}`:'/';if(path!=='/login'&&!roleAllowed(path))navigate('/unauthorized',{replace:true})},[location.pathname,role]);
   const shellClass=`app-shell ${collapsed?'sidebar-collapsed':''} ${mobileOpen?'mobile-nav-open':''}`;
-  if(location.pathname==='/login')return <LoginPage/>;
+  if(location.pathname==='/login'||!sessionQuery.data?.authenticated){if(sessionQuery.isLoading)return <div className="login-page"><div className="loading-state">Checking secure session…</div></div>;return <ServerLoginPage onSuccess={async()=>{await sessionQuery.refetch();navigate('/')}}/>;}
   return <div className={shellClass}>
     <aside className="sidebar">
       <Link to="/" className="brand-lockup"><span className="brand-logo"><Plane size={19} fill="currentColor"/></span><span className="brand-name">aero<span>pulse</span><small>OPERATIONS</small></span></Link>
@@ -71,18 +75,14 @@ export function App() {
         <Route path="/payments" element={<EntityPage section="payments" db={db} onToast={showToast}/>}/>
         <Route path="/staff" element={<EntityPage section="staff" db={db} onToast={showToast}/>}/>
         <Route path="/audit" element={<EntityPage section="audit" db={db} onToast={showToast}/>}/>
+        <Route path="/dev/database" element={role==='admin'?<DeveloperDatabase/>:<div className="page-stack"><h1>Access restricted</h1><p>This page requires the verified administrator session.</p></div>}/>
         <Route path="/unauthorized" element={<div className="page-stack"><h1>Access restricted</h1><p>Your current demo role cannot open this area. Switch roles from the profile menu.</p><button className="button button-light" onClick={()=>go('/')}>Return to overview</button></div>}/>
         <Route path="*" element={<Navigate to="/" replace/>}/>
       </Routes></motion.div>}</AnimatePresence></main>
-      <footer className="app-footer"><span>© 2026 Aeropulse Operations</span><span><i className="footer-pulse"/> All systems operational</span><span>v1.0.0 · <button onClick={()=>showToast('Mock data layer active. Connect your REST API in src/api/mock.ts.')}>API status</button></span></footer>
+      <footer className="app-footer"><span>© 2026 Aeropulse Operations</span><span></span><span>v1.0.0 · <button onClick={()=>void queryClient.invalidateQueries({queryKey:['auth-session']})}>API session</button></span></footer>
     </div>
     {mobileOpen&&<button className="mobile-scrim" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}/>}
     {searchOpen&&<div className="command-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSearchOpen(false)}}><div className="command-palette"><div className="command-input"><Search size={18}/><input autoFocus placeholder="Search pages and records..." value={query} onChange={e=>setQuery(e.target.value)}/><kbd>ESC</kbd></div>{recordMatches.length>0&&<><div className="command-label">RECORDS</div>{recordMatches.map((item,i)=><button className="command-result" key={`${item.path}-${i}`} onClick={()=>go(item.path)}><Search size={16}/><span>{item.label}<small className="command-detail">{item.detail}</small></span><kbd>↵</kbd></button>)}</>}<div className="command-label">PAGES</div>{filtered.map(item=>{const Icon=item.icon;return <button className="command-result" key={item.path} onClick={()=>go(item.path)}><Icon size={17}/><span>{item.label}</span><kbd>↵</kbd></button>})}{query&&!recordMatches.length&&filtered.length===0&&<div className="command-hint">No matching pages or records.</div>}<div className="command-foot"><span>Search records and pages</span><span>ESC to close</span></div></div></div>}
     {toastMessage&&<Toast message={toastMessage} onClose={()=>setToastMessage('')}/>}
   </div>;
-}
-
-export function LoginPage() {
-  const navigate=useNavigate();
-  return <div className="login-page"><div className="login-art"><Link to="/" className="brand-lockup"><span className="brand-logo"><Plane size={19} fill="currentColor"/></span><span className="brand-name">aero<span>pulse</span><small>OPERATIONS</small></span></Link><div className="login-visual"><div className="login-lines"/><div className="login-globe"><Globe2 size={210} strokeWidth={.5}/></div><div className="login-flight-line"><PlaneTakeoff size={24}/></div><div className="login-caption"><span>FLIGHT NETWORK · LIVE</span><b>Keep every journey<br/>moving forward.</b></div><div className="login-metric"><b>96.8%</b><small>On-time performance</small></div></div><div className="login-foot"><span>© Aeropulse Operations 2026</span><span>Security · Privacy</span></div></div><div className="login-form-side"><div className="login-form"><span className="welcome-kicker">WELCOME BACK</span><h1>Sign in to your<br/>workspace</h1><p>Enter your details to access the operations center.</p><label>WORK EMAIL<input type="email" defaultValue="morgan.chen@aeropulse.example"/></label><label>PASSWORD<div className="password-input"><input type="password" defaultValue="aeropulse-demo"/><a href="#forgot">Forgot password?</a></div></label><button className="button button-primary login-submit" onClick={()=>navigate('/')}>Sign in to Aeropulse <ArrowRight size={16}/></button><div className="login-separator"><span>or continue with</span></div><button className="sso-button" onClick={()=>navigate('/')}>◉ Continue with SSO</button><small className="login-help">Having trouble? <a href="#support">Contact your workspace admin</a></small></div></div></div>;
 }
