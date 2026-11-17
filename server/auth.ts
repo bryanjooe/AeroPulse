@@ -53,7 +53,17 @@ export function requireSameOrigin(req: Request, res: Response, next: NextFunctio
   const origin = req.get('origin');
   if (origin) {
     const host = req.get('x-forwarded-host') ?? req.get('host');
-    try { if (!host || new URL(origin).host !== host) { res.status(403).json({ error: { code: 'bad_origin', message: 'Request origin is not allowed.' } }); return; } }
+    try {
+      const parsed = new URL(origin);
+      const configuredOrigins = config.APP_ORIGINS?.split(',').map(value => value.trim()).filter(Boolean) ?? [];
+      const localDevOrigins = config.NODE_ENV !== 'production' ? ['http://localhost:5173', 'http://127.0.0.1:5173'] : [];
+      const trusted = [...configuredOrigins, ...localDevOrigins].some(value => {
+        try { return new URL(value).origin === parsed.origin; } catch { return false; }
+      });
+      if (!trusted && (!host || parsed.host.toLowerCase() !== host.toLowerCase())) {
+        res.status(403).json({ error: { code: 'bad_origin', message: 'Request origin is not allowed.' } }); return;
+      }
+    }
     catch { res.status(403).json({ error: { code: 'bad_origin', message: 'Request origin is not allowed.' } }); return; }
   }
   next();

@@ -8,6 +8,7 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32),
   AUTH_EMAIL: z.string().email(),
   AUTH_PASSWORD_HASH: z.string().regex(/^[a-f0-9]{32}:[a-f0-9]{128}$/i),
+  APP_ORIGINS: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
